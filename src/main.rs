@@ -9,6 +9,7 @@ fn window_conf() -> Conf {
         fullscreen: true,
         window_width: 1920,
         window_height: 1080,
+        sample_count: 32,
         ..Default::default()
     }
 }
