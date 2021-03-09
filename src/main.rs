@@ -1,5 +1,7 @@
-use std::time;
+use std::fs::{read, write};
+use std::path::Path;
 
+use clap::Clap;
 use macroquad::prelude::*;
 
 mod field;
@@ -8,8 +10,63 @@ use field::Field;
 const WIDTH: usize = 1000;
 const HEIGHT: usize = 1000;
 
+// const COLORS: [Color; 25] = [
+//      YELLOW, GOLD, ORANGE, PINK, RED, MAROON, GREEN, LIME, DARKGREEN,
+//     SKYBLUE, BLUE, DARKBLUE, PURPLE, VIOLET, DARKPURPLE, BEIGE, BROWN, DARKBROWN, WHITE, BLACK,
+//     BLANK, MAGENTA,
+// ];
+
+const COLORS: [Color; 23] = [
+    RED, ORANGE, YELLOW, GOLD, GREEN, BLUE, DARKBLUE, PURPLE, VIOLET, PINK, MAROON, LIME,
+    DARKGREEN, SKYBLUE, DARKPURPLE, BEIGE, BROWN, DARKBROWN, WHITE, LIGHTGRAY, GRAY, DARKGRAY,
+    MAGENTA,
+];
+
 fn round(value: f32, factor: f32) -> f32 {
     (value / factor).round() * factor
+}
+
+fn draw_text_background(
+    text: &str,
+    x: f32,
+    y: f32,
+    font_size: f32,
+    color: Color,
+    bg_color: Color,
+) -> (f32, f32) {
+    let (w, h) = measure_text(text, None, font_size as u16, 1.0);
+
+    let padding = 5.0;
+    draw_rectangle(
+        x - padding,
+        y + padding,
+        w + 2.0 * padding,
+        h + 2.0 * padding,
+        bg_color,
+    );
+
+    draw_text(text, x, y, font_size, color);
+
+    (w, h)
+}
+
+#[derive(Clap)]
+#[clap(version = "1.0", author = "Zotho>")]
+struct Opts {
+    #[clap(short, long)]
+    infile: Option<String>,
+    #[clap(short, long, default_value = "output.bin")]
+    outfile: String,
+    #[clap(short, long, default_value = "500")]
+    width: usize,
+    #[clap(short, long, default_value = "500")]
+    height: usize,
+    #[clap(short, long, default_value = "2.0")]
+    size: f32,
+    #[clap(short, long, default_value = "0.0")]
+    delay: f64,
+    #[clap(short, long, default_value = "10")]
+    num_updates: usize,
 }
 
 fn window_conf() -> Conf {
@@ -25,47 +82,89 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let (w, h, size, fill, delay) = match args.as_slice() {
-        [_, w, h, size, fill, delay] => (
-            w.parse().unwrap(),
-            h.parse().unwrap(),
-            size.parse().unwrap(),
-            fill.parse().unwrap(),
-            delay.parse().unwrap(),
-        ),
-        _ => (100, 100, 10.0, 0.5, 100),
+    let opts: Opts = Opts::parse();
+    let infile = opts.infile;
+    let outfile = Path::new(&opts.outfile);
+    let size = opts.size;
+    let delay = opts.delay;
+    let num_updates = opts.num_updates;
+
+    let mut field = if let Some(infile) = infile {
+        let data = read(Path::new(&infile)).unwrap();
+        bincode::deserialize(data.as_slice()).unwrap()
+    } else {
+        let mut field = Field::new(opts.width, opts.height);
+        let index = field.index(field.width / 2, field.height / 2);
+        field.inner_field[index] = 1000000;
+        field.fill_job_queue();
+        field
     };
+    // let w = field.width;
+    // let h = field.height;
 
-    let mut field = Field::new(w, h);
-    // let mut field = vec![false; w * h];
-    // let mut old_field = field.clone();
-
-    field.inner_field.iter_mut().for_each(|cell| {
-        *cell = rand::gen_range::<f32>(0.0, 1.0) < fill;
-    });
-
-    let delay = time::Duration::from_millis(delay);
+    // Update delay in millis
+    let delay = delay / 1000.0;
     let mut paused = false;
-    let mut last_time = time::Instant::now();
+    let mut last_time = get_time();
 
     // For more smooth fps
     let fps_n_last = 20.0;
     let mut fps = 1.0 / get_frame_time();
 
+    let mut debug = true;
+
     let mut last_x = 0;
     let mut last_y = 0;
 
+    let mut sw;
+    let mut sh;
+    // let (mut sw, mut sh) = (WIDTH as f32, HEIGHT as f32);
+
+    let mut i = 0;
+    let start = get_time();
+    let mut elapsed = std::f64::INFINITY;
+
     loop {
-        let new_time = time::Instant::now();
+        let new_time = get_time();
         if !paused && new_time - last_time > delay {
-            field.update();
+            // let (mut swap, mut clone, mut all) = (0.0, 0.0, 0.0);
+            for _ in 0..num_updates {
+                // let (dswap, dclone, dall) = field.update();
+                field.update();
+                // swap += dswap;
+                // clone += dclone;
+                // all += dall;
+                
+                // if field.job_queue.len() == 0 || i == 89107 {
+                //     break;
+                // }
+                if field.job_queue.len() == 0 {
+                    if elapsed.is_infinite() {
+                        elapsed = get_time() - start;
+                    }
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
             last_time = new_time;
         }
 
-        let (sw, sh) = (screen_width(), screen_height());
-        let x_offset = sw / 2.0 - w as f32 * size / 2.0;
-        let y_offset = sh / 2.0 - h as f32 * size / 2.0;
+        let new_sw = screen_width();
+        let new_sh = screen_height();
+
+        // if new_sw != sw || new_sh != sh {
+        //     field = Field::new((new_sw / size) as usize, (new_sh / size) as usize);
+
+        //     // field.inner_field.iter_mut().for_each(|cell| {
+        //     //     *cell = rand::gen_range::<f32>(0.0, 1.0) < fill;
+        //     // });
+        // }
+        sw = new_sw;
+        sh = new_sh;
+
+        let x_offset = sw / 2.0 - field.width as f32 * size / 2.0;
+        let y_offset = sh / 2.0 - field.height as f32 * size / 2.0;
         let centered = |x, y| (x * size + x_offset, y * size + y_offset);
         let from_centered = |x, y| ((x - x_offset) / size, (y - y_offset) / size);
 
@@ -73,6 +172,8 @@ async fn main() {
 
         #[cfg(not(target_arch = "wasm32"))]
         if is_key_pressed(KeyCode::Q) | is_key_pressed(KeyCode::Escape) {
+            let data = bincode::serialize(&field).unwrap();
+            write(outfile, data).unwrap();
             break;
         }
 
@@ -80,25 +181,24 @@ async fn main() {
             paused = !paused;
         }
 
-        let check_coords = |x: f32, y: f32| {
-            let (x, y) = if x >= 0.0 && y >= 0.0 {
-                (x as usize, y as usize)
-            } else {
-                (x.max(0.0) as usize, y.max(0.0) as usize)
-            };
-            (x.min(field.width - 1), y.min(field.height - 1))
-        };
+        if is_key_pressed(KeyCode::H) {
+            debug = !debug;
+        }
+
+        if is_key_pressed(KeyCode::Enter) {
+            field.update();
+        }
 
         if is_mouse_button_pressed(MouseButton::Left) {
             let (x, y) = from_centered(mx, my);
-            let (x, y) = check_coords(x, y);
+            let (x, y) = field.check_coords(x, y);
             last_x = x;
             last_y = y;
         }
 
         if is_mouse_button_down(MouseButton::Left) {
             let (x, y) = from_centered(mx, my);
-            let (x, y) = check_coords(x, y);
+            let (x, y) = field.check_coords(x, y);
             field.put_line(last_x, last_y, x, y);
 
             last_x = x;
@@ -108,27 +208,54 @@ async fn main() {
         clear_background(GRAY);
 
         let (start_x, start_y) = centered(0.0, 0.0);
-        draw_rectangle(start_x, start_y, w as f32 * size, h as f32 * size, BLACK);
+        draw_rectangle(
+            start_x,
+            start_y,
+            field.width as f32 * size,
+            field.height as f32 * size,
+            BLACK,
+        );
 
-        for y in 0..h {
-            for x in 0..w {
+        for y in 0..field.height {
+            for x in 0..field.width {
                 let (cx, cy) = centered(x as f32, y as f32);
-                if field.get(x, y) {
-                    draw_rectangle(cx, cy, size, size, WHITE);
+                let count = field.get(x, y);
+                if count >= 1 {
+                    let color = COLORS[(count as usize - 1) % COLORS.len()];
+                    // let color = Color::from_hsl(count as f32 % 4.0 / 4.0, 1.0, 0.5);
+                    draw_rectangle(cx, cy, size, size, color);
                 }
             }
         }
 
         draw_circle(mx, my, 10.0, DARKGRAY);
 
-        fps = (fps * (fps_n_last - 1.0) + 1.0 / get_frame_time()) / fps_n_last;
-        draw_text(
-            &format!("{:3.0}", round(fps, 5.0)),
-            15.0,
-            10.0,
-            20.0,
-            LIGHTGRAY,
-        );
+        if debug {
+            let mut height = 0.0;
+            let mut draw_text_line = |text| {
+                let (_w, h) =
+                    draw_text_background(text, 15.0, 10.0 + height, 25.0, LIGHTGRAY, BLACK);
+                height += h + 15.0;
+            };
+
+            fps = (fps * (fps_n_last - 1.0) + 1.0 / get_frame_time()) / fps_n_last;
+
+            let fps_text = format!("FPS: {:3.0}", round(fps, 5.0));
+            let elapsed_text = format!("Elapsed: {:3.3}", elapsed.min(get_time() - start));
+            let iter_text = format!("Iteration: {}", i);
+            let pause_text = format!(
+                "{} (space bar to {})",
+                if paused { "PAUSED" } else { "PLAYING" },
+                if paused { "play" } else { "pause" }
+            );
+
+            draw_text_line(&fps_text);
+            draw_text_line(&elapsed_text);
+            draw_text_line(&iter_text);
+            draw_text_line(&pause_text);
+            draw_text_line(&"Mouse to draw");
+            draw_text_line(&"H to hide this text");
+        }
 
         next_frame().await
     }

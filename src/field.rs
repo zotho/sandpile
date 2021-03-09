@@ -1,29 +1,52 @@
+use macroquad::prelude::get_time;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Field {
     pub height: usize,
     pub width: usize,
-    pub inner_field: Vec<bool>,
-    pub old_field: Vec<bool>,
+    pub inner_field: Vec<u32>,
+    pub old_field: Vec<u32>,
+    pub job_queue: Vec<(usize, usize, usize)>,
+    pub old_job_queue: Vec<(usize, usize, usize)>,
 }
 
 impl Field {
     pub fn new(width: usize, height: usize) -> Self {
-        let inner_field = vec![false; width * height];
+        let inner_field = vec![0; width * height];
         let old_field = inner_field.clone();
         Field {
-            width, height, inner_field, old_field
+            width,
+            height,
+            inner_field,
+            old_field,
+            job_queue: Vec::new(),
+            old_job_queue: Vec::new(),
         }
     }
 
-    pub fn swap(&mut self) {
-        std::mem::swap(&mut self.inner_field, &mut self.old_field);
+    pub fn fill_job_queue(&mut self) {
+        let mut index = 0;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let previous_count = self.inner_field[index];
+
+                if previous_count > 3 {
+                    self.job_queue.push((index, x, y));
+                }
+
+                index += 1;
+            }
+        }
     }
 
-    pub fn get(&self, x: usize, y: usize) -> bool {
+    pub fn get(&self, x: usize, y: usize) -> u32 {
         self.inner_field[self.index(x, y)]
     }
 
-    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut bool {
+    pub fn _get_mut(&mut self, x: usize, y: usize) -> &mut u32 {
         let index = self.index(x, y);
+        self.job_queue.push((index, x, y));
         &mut self.inner_field[index]
     }
 
@@ -31,37 +54,111 @@ impl Field {
         y * self.width + x
     }
 
-    pub fn update(&mut self) {
-        self.swap();
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let start_x = x.saturating_sub(1);
-                let start_y = y.saturating_sub(1);
-                let end_x = (x + 1).min(self.width - 1);
-                let end_y = (y + 1).min(self.height - 1);
-                let mut sum = 0;
-                for inner_x in start_x..=end_x {
-                    for inner_y in start_y..=end_y {
-                        if self.old_field[self.index(inner_x, inner_y)] && !(x == inner_x && y == inner_y)
-                        {
-                            sum += 1;
-                        }
-                    }
-                }
-                let current_index = self.index(x, y);
-                let current_cell = self.old_field[current_index];
+    pub fn check_coords(&self, x: f32, y: f32) -> (usize, usize) {
+        let (x, y) = if x >= 0.0 && y >= 0.0 {
+            (x as usize, y as usize)
+        } else {
+            (x.max(0.0) as usize, y.max(0.0) as usize)
+        };
+        (x.min(self.width - 1), y.min(self.height - 1))
+    }
 
-                // N3, S23
-                self.inner_field[current_index] = matches!((sum, current_cell),(2, true) | (3, _));
+    pub fn update(&mut self) -> (f64, f64, f64) {
+        let swap = get_time();
+        std::mem::swap(&mut self.inner_field, &mut self.old_field);
+        std::mem::swap(&mut self.job_queue, &mut self.old_job_queue);
+        let swap = get_time() - swap;
+
+        let clone = get_time();
+        self.inner_field.clone_from(&self.old_field);
+        let clone = get_time() - clone;
+
+        let all = get_time();
+        for i in 0..self.old_job_queue.len() {
+            let (index, x, y) = self.old_job_queue[i];
+            let previous_count = self.old_field[index];
+
+            if previous_count > 3 {
+                self.add_to(index, x, y, -4);
+
+                if x > 0 {
+                    self.add_to(index - 1, x - 1, y, 1);
+                }
+                if x < self.width - 1 {
+                    self.add_to(index + 1, x + 1, y, 1);
+                }
+                if y > 0 {
+                    self.add_to(index - self.width, x, y - 1, 1);
+                }
+                if y < self.height - 1 {
+                    self.add_to(index + self.width, x, y + 1, 1);
+                }
             }
+        }
+        self.old_job_queue.clear();
+        self.job_queue.sort_unstable();
+        self.job_queue.dedup();
+        let all = get_time() - all;
+        (swap, clone, all)
+    }
+
+    pub fn add_to(&mut self, index: usize, x: usize, y: usize, amount: i64) {
+        if amount.is_negative() {
+            self.inner_field[index] -= amount.abs() as u32;
+        } else {
+            self.inner_field[index] += amount as u32;
+        }
+        if self.inner_field[index] > 3 {
+            self.job_queue.push((index, x, y));
         }
     }
 
+    pub fn _slow_update(&mut self) -> (f64, f64, f64) {
+        let swap = get_time();
+        std::mem::swap(&mut self.inner_field, &mut self.old_field);
+        let swap = get_time() - swap;
+
+        let clone = get_time();
+        self.inner_field.clone_from(&self.old_field);
+        let clone = get_time() - clone;
+
+        let all = get_time();
+        let mut index = 0;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let previous_count = self.old_field[index];
+
+                if previous_count > 3 {
+                    self.inner_field[index] -= 4;
+                    if x > 0 {
+                        self.inner_field[index - 1] += 1;
+                    }
+                    if x < self.width - 1 {
+                        self.inner_field[index + 1] += 1;
+                    }
+                    if y > 0 {
+                        self.inner_field[index - self.width] += 1;
+                    }
+                    if y < self.height - 1 {
+                        self.inner_field[index + self.width] += 1;
+                    }
+                }
+
+                index += 1;
+            }
+        }
+        let all = get_time() - all;
+
+        (swap, clone, all)
+    }
+
     pub fn put_pixel(&mut self, x: usize, y: usize) {
-        *self.get_mut(x, y) = true;
+        let index = self.index(x, y);
+        self.add_to(index, x, y, 40);
     }
 
     pub fn put_line(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
+        // Source: https://jstutorial.medium.com/how-to-code-your-first-algorithm-draw-a-line-ca121f9a1395
         // Calculate line deltas
         let dx = x2 as i16 - x1 as i16;
         let dy = y2 as i16 - y1 as i16;
@@ -76,11 +173,12 @@ impl Field {
             // Line is drawn left to right
             let (x, mut y, xe) = if dx >= 0 {
                 (x1, y1, x2)
-            } else { // Line is drawn right to left (swap ends)
+            } else {
+                // Line is drawn right to left (swap ends)
                 (x2, y2, x1)
             };
             self.put_pixel(x, y); // Draw first pixel
-            // Rasterize the line
+                                  // Rasterize the line
             for x in x..xe {
                 // Deal with octants...
                 if px < 0 {
@@ -97,21 +195,23 @@ impl Field {
                 // currently rasterized position
                 self.put_pixel(x, y);
             }
-        } else { // The line is Y-axis dominant
+        } else {
+            // The line is Y-axis dominant
             // Line is drawn bottom to top
             let (mut x, y, ye) = if dy >= 0 {
                 (x1, y1, y2)
-            } else { // Line is drawn top to bottom
+            } else {
+                // Line is drawn top to bottom
                 (x2, y2, y1)
             };
             self.put_pixel(x, y); // Draw first pixel
-            // Rasterize the line
+                                  // Rasterize the line
             for y in y..ye {
                 // Deal with octants...
                 if py <= 0 {
                     py = py + 2 * dx1;
                 } else {
-                    if (dx < 0 && dy<0) || (dx > 0 && dy > 0) {
+                    if (dx < 0 && dy < 0) || (dx > 0 && dy > 0) {
                         x = x + 1;
                     } else {
                         x = x - 1;
@@ -123,5 +223,8 @@ impl Field {
                 self.put_pixel(x, y);
             }
         }
+
+        self.job_queue.sort_unstable();
+        self.job_queue.dedup();
     }
 }
