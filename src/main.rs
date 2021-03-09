@@ -2,8 +2,11 @@ use std::time;
 
 use macroquad::prelude::*;
 
-const WIDTH: usize = 1920;
-const HEIGHT: usize = 1080;
+mod field;
+use field::Field;
+
+const WIDTH: usize = 1000;
+const HEIGHT: usize = 1000;
 
 fn round(value: f32, factor: f32) -> f32 {
     (value / factor).round() * factor
@@ -34,12 +37,11 @@ async fn main() {
         _ => (100, 100, 10.0, 0.5, 100),
     };
 
-    let index = |x, y| y * w + x;
+    let mut field = Field::new(w, h);
+    // let mut field = vec![false; w * h];
+    // let mut old_field = field.clone();
 
-    let mut field = vec![false; w * h];
-    let mut old_field = field.clone();
-
-    field.iter_mut().for_each(|cell| {
+    field.inner_field.iter_mut().for_each(|cell| {
         *cell = rand::gen_range::<f32>(0.0, 1.0) < fill;
     });
 
@@ -51,32 +53,13 @@ async fn main() {
     let fps_n_last = 20.0;
     let mut fps = 1.0 / get_frame_time();
 
+    let mut last_x = 0;
+    let mut last_y = 0;
+
     loop {
         let new_time = time::Instant::now();
         if !paused && new_time - last_time > delay {
-            std::mem::swap(&mut field, &mut old_field);
-            for y in 0..h {
-                for x in 0..w {
-                    let start_x = x.saturating_sub(1);
-                    let start_y = y.saturating_sub(1);
-                    let end_x = (x + 1).min(w - 1);
-                    let end_y = (y + 1).min(h - 1);
-                    let mut sum = 0;
-                    for inner_x in start_x..=end_x {
-                        for inner_y in start_y..=end_y {
-                            if old_field[index(inner_x, inner_y)] && !(x == inner_x && y == inner_y)
-                            {
-                                sum += 1;
-                            }
-                        }
-                    }
-                    let current_index = index(x, y);
-                    let current_cell = old_field[current_index];
-
-                    // N3, S23
-                    field[current_index] = matches!((sum, current_cell),(2, true) | (3, _));
-                }
-            }
+            field.update();
             last_time = new_time;
         }
 
@@ -97,11 +80,29 @@ async fn main() {
             paused = !paused;
         }
 
+        let check_coords = |x: f32, y: f32| {
+            let (x, y) = if x >= 0.0 && y >= 0.0 {
+                (x as usize, y as usize)
+            } else {
+                (x.max(0.0) as usize, y.max(0.0) as usize)
+            };
+            (x.min(field.width - 1), y.min(field.height - 1))
+        };
+
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let (x, y) = from_centered(mx, my);
+            let (x, y) = check_coords(x, y);
+            last_x = x;
+            last_y = y;
+        }
+
         if is_mouse_button_down(MouseButton::Left) {
             let (x, y) = from_centered(mx, my);
-            if (0.0..w as f32).contains(&x) && (0.0..h as f32).contains(&y) {
-                field[index(x as usize, y as usize)] = true;
-            }
+            let (x, y) = check_coords(x, y);
+            field.put_line(last_x, last_y, x, y);
+
+            last_x = x;
+            last_y = y;
         }
 
         clear_background(GRAY);
@@ -112,14 +113,14 @@ async fn main() {
         for y in 0..h {
             for x in 0..w {
                 let (cx, cy) = centered(x as f32, y as f32);
-                if field[index(x, y)] {
+                if field.get(x, y) {
                     draw_rectangle(cx, cy, size, size, WHITE);
                 }
             }
         }
 
         draw_circle(mx, my, 10.0, DARKGRAY);
-        
+
         fps = (fps * (fps_n_last - 1.0) + 1.0 / get_frame_time()) / fps_n_last;
         draw_text(
             &format!("{:3.0}", round(fps, 5.0)),
