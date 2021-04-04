@@ -6,6 +6,10 @@
 **/*.rs.bk
 
 *.bin
+
+# Flamegraph
 *.svg
+*.data
+*.data.old
 
 .idea

@@ -1,6 +1,6 @@
-on: [push, pull_request]
+name: Flamegraph
 
-name: Quickstart
+on: [push, pull_request]
 
 jobs:
   flamegraph:
@@ -27,8 +27,17 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install libgl1-mesa-dev libxi-dev
 
+      - name: Patch perf_event_paranoid
+        run: echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
+
       - name: Run flamegraph
         uses: actions-rs/cargo@v1
         with:
           command: flamegraph
           args: --bench bench
+
+      - name: Upload flamegraph artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: flamegraph
+          path: flamegraph.svg
