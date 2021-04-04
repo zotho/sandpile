@@ -1,0 +1,34 @@
+on: [push, pull_request]
+
+name: Quickstart
+
+jobs:
+  flamegraph:
+    name: Flamegraph
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Install flamegraph
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: flamegraph
+      
+      - name: Install dependencies
+        run: sudo apt-get install libgl1-mesa-dev libxi-dev
+
+      - name: Run flamegraph
+        uses: actions-rs/cargo@v1
+        with:
+          command: flamegraph
+          args: --bench bench
