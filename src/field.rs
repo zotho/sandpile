@@ -9,6 +9,7 @@ pub struct Field {
     pub old_field: Vec<u32>,
     pub job_queue: Vec<(usize, usize, usize)>,
     pub old_job_queue: Vec<(usize, usize, usize)>,
+    pub iteration: usize,
 }
 
 impl Field {
@@ -22,10 +23,11 @@ impl Field {
             old_field,
             job_queue: Vec::new(),
             old_job_queue: Vec::new(),
+            iteration: 0,
         }
     }
 
-    pub fn fill_job_queue(&mut self) {
+    pub fn _fill_job_queue(&mut self) {
         let mut index = 0;
         for y in 0..self.height {
             for x in 0..self.width {
@@ -44,7 +46,7 @@ impl Field {
         self.inner_field[self.index(x, y)]
     }
 
-    pub fn _get_mut(&mut self, x: usize, y: usize) -> &mut u32 {
+    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut u32 {
         let index = self.index(x, y);
         self.job_queue.push((index, x, y));
         &mut self.inner_field[index]
@@ -63,17 +65,25 @@ impl Field {
         (x.min(self.width - 1), y.min(self.height - 1))
     }
 
-    pub fn update(&mut self) -> (f64, f64, f64) {
-        let swap = get_time();
+    pub fn update(&mut self) {
         std::mem::swap(&mut self.inner_field, &mut self.old_field);
         std::mem::swap(&mut self.job_queue, &mut self.old_job_queue);
-        let swap = get_time() - swap;
 
-        let clone = get_time();
         self.inner_field.clone_from(&self.old_field);
-        let clone = get_time() - clone;
 
-        let all = get_time();
+        // let mut prev_y: usize = self.old_job_queue.first().unwrap().2;
+        // let chunks = self.old_job_queue.split_mut(|(_, _, y)| {
+        //     println!("{} {}", prev_y, y);
+        //     if *y != prev_y {
+        //         prev_y = *y;
+        //         true
+        //     } else {
+        //         false
+        //     }
+        // });
+        // for group in chunks {
+        //     println!("{:?}", group.len());
+        // }
         for i in 0..self.old_job_queue.len() {
             let (index, x, y) = self.old_job_queue[i];
             let previous_count = self.old_field[index];
@@ -96,10 +106,12 @@ impl Field {
             }
         }
         self.old_job_queue.clear();
-        self.job_queue.sort_unstable();
+
+        self.job_queue.sort_unstable_by_key(|job| job.0);
         self.job_queue.dedup();
-        let all = get_time() - all;
-        (swap, clone, all)
+        if self.job_queue.len() != 0 {
+            self.iteration += 1;
+        }
     }
 
     pub fn add_to(&mut self, index: usize, x: usize, y: usize, amount: i64) {
@@ -113,16 +125,11 @@ impl Field {
         }
     }
 
-    pub fn _slow_update(&mut self) -> (f64, f64, f64) {
-        let swap = get_time();
+    pub fn _slow_update(&mut self) {
         std::mem::swap(&mut self.inner_field, &mut self.old_field);
-        let swap = get_time() - swap;
 
-        let clone = get_time();
         self.inner_field.clone_from(&self.old_field);
-        let clone = get_time() - clone;
 
-        let all = get_time();
         let mut index = 0;
         for y in 0..self.height {
             for x in 0..self.width {
@@ -147,9 +154,6 @@ impl Field {
                 index += 1;
             }
         }
-        let all = get_time() - all;
-
-        (swap, clone, all)
     }
 
     pub fn put_pixel(&mut self, x: usize, y: usize) {

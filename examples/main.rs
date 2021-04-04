@@ -4,8 +4,7 @@ use std::path::Path;
 use clap::Clap;
 use macroquad::prelude::*;
 
-mod field;
-use field::Field;
+use sandpiles::Field;
 
 const WIDTH: usize = 1000;
 const HEIGHT: usize = 1000;
@@ -51,7 +50,7 @@ fn draw_text_background(
 }
 
 #[derive(Clap)]
-#[clap(version = "1.0", author = "Zotho>")]
+#[clap(version = "1.0")]
 struct Opts {
     #[clap(short, long)]
     infile: Option<String>,
@@ -72,7 +71,7 @@ struct Opts {
 fn window_conf() -> Conf {
     Conf {
         window_title: "Cellular".to_owned(),
-        fullscreen: false,
+        fullscreen: true,
         window_width: WIDTH as i32,
         window_height: HEIGHT as i32,
         sample_count: 64,
@@ -94,9 +93,9 @@ async fn main() {
         bincode::deserialize(data.as_slice()).unwrap()
     } else {
         let mut field = Field::new(opts.width, opts.height);
-        let index = field.index(field.width / 2, field.height / 2);
-        field.inner_field[index] = 1000000;
-        field.fill_job_queue();
+        *field.get_mut(field.width / 2, field.height / 2) = 1000000;
+        // *field.get_mut(field.width / 2 + 1, field.height / 2) = 4;
+        // *field.get_mut(field.width / 2 + 1, field.height / 2) = 1000000;
         field
     };
     // let w = field.width;
@@ -120,21 +119,15 @@ async fn main() {
     let mut sh;
     // let (mut sw, mut sh) = (WIDTH as f32, HEIGHT as f32);
 
-    let mut i = 0;
     let start = get_time();
     let mut elapsed = std::f64::INFINITY;
 
     loop {
         let new_time = get_time();
         if !paused && new_time - last_time > delay {
-            // let (mut swap, mut clone, mut all) = (0.0, 0.0, 0.0);
             for _ in 0..num_updates {
-                // let (dswap, dclone, dall) = field.update();
                 field.update();
-                // swap += dswap;
-                // clone += dclone;
-                // all += dall;
-                
+
                 // if field.job_queue.len() == 0 || i == 89107 {
                 //     break;
                 // }
@@ -143,8 +136,6 @@ async fn main() {
                         elapsed = get_time() - start;
                     }
                     break;
-                } else {
-                    i += 1;
                 }
             }
             last_time = new_time;
@@ -220,7 +211,7 @@ async fn main() {
             for x in 0..field.width {
                 let (cx, cy) = centered(x as f32, y as f32);
                 let count = field.get(x, y);
-                if count >= 1 {
+                if count > 0 {
                     let color = COLORS[(count as usize - 1) % COLORS.len()];
                     // let color = Color::from_hsl(count as f32 % 4.0 / 4.0, 1.0, 0.5);
                     draw_rectangle(cx, cy, size, size, color);
@@ -242,7 +233,7 @@ async fn main() {
 
             let fps_text = format!("FPS: {:3.0}", round(fps, 5.0));
             let elapsed_text = format!("Elapsed: {:3.3}", elapsed.min(get_time() - start));
-            let iter_text = format!("Iteration: {}", i);
+            let iter_text = format!("Iteration: {}", field.iteration);
             let pause_text = format!(
                 "{} (space bar to {})",
                 if paused { "PAUSED" } else { "PLAYING" },
