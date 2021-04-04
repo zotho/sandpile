@@ -1,5 +1,6 @@
-use macroquad::prelude::get_time;
 use serde::{Deserialize, Serialize};
+
+use crate::add_assign_signed::AddAssignSigned;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Field {
@@ -66,10 +67,13 @@ impl Field {
     }
 
     pub fn update(&mut self) {
+        // let t1 = std::time::Instant::now();
         std::mem::swap(&mut self.inner_field, &mut self.old_field);
         std::mem::swap(&mut self.job_queue, &mut self.old_job_queue);
 
+        // let t2 = std::time::Instant::now();
         self.inner_field.clone_from(&self.old_field);
+        // let t2e = t2.elapsed().as_secs_f64();
 
         // let mut prev_y: usize = self.old_job_queue.first().unwrap().2;
         // let chunks = self.old_job_queue.split_mut(|(_, _, y)| {
@@ -112,14 +116,13 @@ impl Field {
         if self.job_queue.len() != 0 {
             self.iteration += 1;
         }
+
+        // let t1e = t1.elapsed().as_secs_f64();
+        // println!("{}/{} == {}", t2e, t1e, t2e / t1e);
     }
 
     pub fn add_to(&mut self, index: usize, x: usize, y: usize, amount: i64) {
-        if amount.is_negative() {
-            self.inner_field[index] -= amount.abs() as u32;
-        } else {
-            self.inner_field[index] += amount as u32;
-        }
+        self.inner_field[index].add_assign_signed(amount);
         if self.inner_field[index] > 3 {
             self.job_queue.push((index, x, y));
         }
