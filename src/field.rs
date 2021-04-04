@@ -113,7 +113,7 @@ impl Field {
 
         self.job_queue.sort_unstable_by_key(|job| job.0);
         self.job_queue.dedup();
-        if self.job_queue.len() != 0 {
+        if !self.job_queue.is_empty() {
             self.iteration += 1;
         }
 
@@ -189,14 +189,14 @@ impl Field {
             for x in x..xe {
                 // Deal with octants...
                 if px < 0 {
-                    px = px + 2 * dy1;
+                    px += 2 * dy1;
                 } else {
                     if (dx < 0 && dy < 0) || (dx > 0 && dy > 0) {
-                        y = y + 1;
+                        y += 1;
                     } else {
-                        y = y - 1;
+                        y -= 1;
                     }
-                    px = px + 2 * (dy1 - dx1);
+                    px += 2 * (dy1 - dx1);
                 }
                 // Draw pixel from line span at
                 // currently rasterized position
@@ -216,14 +216,14 @@ impl Field {
             for y in y..ye {
                 // Deal with octants...
                 if py <= 0 {
-                    py = py + 2 * dx1;
+                    py += 2 * dx1;
                 } else {
                     if (dx < 0 && dy < 0) || (dx > 0 && dy > 0) {
-                        x = x + 1;
+                        x += 1;
                     } else {
-                        x = x - 1;
+                        x -= 1;
                     }
-                    py = py + 2 * (dx1 - dy1);
+                    py += 2 * (dx1 - dy1);
                 }
                 // Draw pixel from line span at
                 // currently rasterized position
